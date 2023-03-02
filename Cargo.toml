@@ -14,4 +14,5 @@ repository = "https://github.com/YtvwlD/multiboot12"
 
 [dependencies]
 multiboot = "0.8"
-multiboot2-header = "0.2"
+multiboot2-header = { git = "https://github.com/YtvwlD/multiboot2", branch = "bootloader" }
+ouroboros = "0.15.6"
