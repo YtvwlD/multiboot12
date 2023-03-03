@@ -38,7 +38,7 @@ impl InfoBuilder {
     pub(crate) fn new_multiboot() -> Self {
         Self::Multiboot(MultibootInfoBuilder::new(
             MultibootInfo::default(), MultibootAllocator::new(),
-            |i, a| Multiboot::from_ref(i, a)
+            Vec::new(), |i, a| Multiboot::from_ref(i, a),
         ))
     }
 
@@ -48,10 +48,12 @@ impl InfoBuilder {
 
     pub fn build(self) -> (MultibootInfo, u32) {
         match self {
-            // TODO: Does this drop allocator?
-            Self::Multiboot(bu) => (
-                bu.into_heads().info, MULTIBOOT_EAX_SIGNATURE,
-            ),
+            Self::Multiboot(bu) => {
+                let heads = bu.into_heads();
+                core::mem::forget(heads.allocator);
+                core::mem::forget(heads.memory_map_vec);
+                (heads.info, MULTIBOOT_EAX_SIGNATURE)
+            },
             Self::Multiboot2(_) => todo!(),
         }
     }
@@ -89,7 +91,11 @@ impl InfoBuilder {
         }
     }
 
-    pub fn allocate_memory_info_vec(&self, count: usize) -> Vec<MemoryEntry> {
+    pub fn allocate_memory_map_vec(&mut self, count: usize) -> Vec<MemoryEntry> {
+        match self {
+            Self::Multiboot(b) => b.allocate_memory_map_vec(count),
+            Self::Multiboot2(_) => todo!(),
+        }
         let mut v = Vec::new();
         v.resize_with(
             count, || self.new_memory_entry(0, 0, MemoryType::Reserved),
@@ -139,22 +145,9 @@ impl InfoBuilder {
         }
     }
 
-    pub fn set_memory_regions(&mut self, regions: Option<Vec<MemoryEntry>>) {
+    pub fn set_memory_regions(&mut self, regions: Option<&[MemoryEntry]>) {
         match self {
-            Self::Multiboot(b) => b.with_wrap_mut(|w| 
-                match regions {
-                    None => w.set_memory_regions(None),
-                    Some(mods) => {
-                        let v: Vec<_> = mods.into_iter().map(|mo|match mo {
-                            MemoryEntry::Multiboot(m) => m,
-                            MemoryEntry::Multiboot2(_) => panic!("wrong Multiboot version"),
-                        }).collect();
-                        w.set_memory_regions(Some(
-                            (v.as_slice().as_ptr() as u64, v.len())
-                        ))
-                    }
-                }
-            ),
+            Self::Multiboot(b) => b.set_memory_regions(regions),
             Self::Multiboot2(_) => todo!(),
         }
     }
@@ -194,9 +187,36 @@ impl InfoBuilder {
 pub struct MultibootInfoBuilder {
     info: MultibootInfo,
     allocator: MultibootAllocator,
+    memory_map_vec: Vec<MultibootMemoryEntry>,
     #[borrows(mut info, mut allocator)]
     #[not_covariant]
     wrap: Multiboot<'this, 'this>,
+}
+
+impl MultibootInfoBuilder {
+    fn allocate_memory_map_vec(&mut self, count: usize) {
+        self.with_memory_map_vec_mut(|v| v.resize(count, MultibootMemoryEntry::default()))
+    }
+
+    fn set_memory_regions(&mut self, regions: Option<&[MemoryEntry]>) {
+        self.with_mut(|s|
+            match regions {
+                None => s.wrap.set_memory_regions(None),
+                Some(mods) => {
+                    s.memory_map_vec.truncate(mods.len());
+                    mods.into_iter().zip(s.memory_map_vec.iter_mut()).for_each(
+                        |(source, destination)| match source {
+                            MemoryEntry::Multiboot(src) => *destination = *src,
+                            MemoryEntry::Multiboot2(_) => panic!("wrong Multiboot version"),
+                        }
+                    );
+                    s.wrap.set_memory_regions(Some(
+                        (s.memory_map_vec.as_slice().as_ptr() as u64, mods.len())
+                    ))
+                }
+            }
+        )
+    }
 }
 
 /// Proxy Rust's allocator to the multiboot crate.
