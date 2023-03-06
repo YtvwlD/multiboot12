@@ -18,20 +18,21 @@ use multiboot::information::{
     SIGNATURE_EAX as MULTIBOOT_EAX_SIGNATURE,
 };
 use multiboot2::{
+    CommandLineTag,
     ElfSectionsTag,
     FramebufferTag,
     FramebufferType,
-    BootInformation,
     MemoryArea,
     MemoryAreaType,
     ModuleTag,
     MULTIBOOT2_BOOTLOADER_MAGIC as MULTIBOOT2_EAX_SIGNATURE,
 };
+use multiboot2::builder::Multiboot2InformationBuilder;
 use ouroboros::self_referencing;
 
 pub enum InfoBuilder {
     Multiboot(MultibootInfoBuilder),
-    Multiboot2(BootInformation),
+    Multiboot2(Multiboot2InformationBuilder),
 }
 
 impl InfoBuilder {
@@ -43,7 +44,7 @@ impl InfoBuilder {
     }
 
     pub(crate) fn new_multiboot2() -> Self {
-        Self::Multiboot2(todo!())
+        Self::Multiboot2(Multiboot2InformationBuilder::new())
     }
 
     pub fn build(self) -> (MultibootInfo, u32) {
@@ -120,7 +121,9 @@ impl InfoBuilder {
     pub fn set_command_line(&mut self, cmdline: Option<&str>) {
         match self {
             Self::Multiboot(b) => b.with_wrap_mut(|w| w.set_command_line(cmdline)),
-            Self::Multiboot2(b) => todo!(),
+            Self::Multiboot2(b) => if let Some(c) = cmdline {
+                b.command_line_tag(CommandLineTag::new(c))
+            },
         }
     }
 
