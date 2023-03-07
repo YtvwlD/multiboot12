@@ -20,6 +20,7 @@ use multiboot::information::{
     SIGNATURE_EAX as MULTIBOOT_EAX_SIGNATURE,
 };
 use multiboot2::{
+    BootLoaderNameTag,
     CommandLineTag,
     ElfSectionsTag,
     FramebufferTag,
@@ -120,7 +121,9 @@ impl InfoBuilder {
      pub fn set_boot_loader_name(&mut self, name: Option<&str>) {
         match self {
             Self::Multiboot(b) => b.with_wrap_mut(|w| w.set_boot_loader_name(name)),
-            Self::Multiboot2(b) => todo!(),
+            Self::Multiboot2(b) => if let Some(n) = name {
+                b.bootloader_name_tag(BootLoaderNameTag::new(n))
+            },
         }
     }
 
