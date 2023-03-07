@@ -1,6 +1,7 @@
 use core::alloc::Layout;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use alloc::slice;
 use alloc::{collections::BTreeMap, alloc::dealloc};
 use alloc::alloc::alloc;
 
@@ -189,7 +190,14 @@ impl InfoBuilder {
                     Symbols::Multiboot2(_) => panic!("wrong Multiboot version"),
                 })))
             },
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => if let Some(syms) = symbols {
+                match syms {
+                    Symbols::Multiboot(_) => panic!("wrong Multiboot version"),
+                    Symbols::Multiboot2(sy) => if let Some(s) = sy {
+                        b.elf_sections_tag(s)
+                    }
+                }
+            },
         }
     }
 }
@@ -366,10 +374,9 @@ pub enum Module<'a> {
     Multiboot2(Box<ModuleTag>),
 }
 
-#[derive(Clone, Copy)]
 pub enum Symbols {
     Multiboot(SymbolType),
-    Multiboot2(Option<ElfSectionsTag>),
+    Multiboot2(Option<Box<ElfSectionsTag>>),
 }
 
 impl Symbols {
@@ -381,6 +388,17 @@ impl Symbols {
                 num, size, addr.try_into().unwrap(), shndx,
             )
         ))
+    }
+
+    pub(crate) fn new_multiboot2(
+        num: u32, size: u32, addr: usize, shndx: u32
+    ) -> Self {
+        let bytes = unsafe { slice::from_raw_parts(
+            addr as *mut u8, (num * size).try_into().unwrap()
+        ) };
+        Self::Multiboot2(Some(ElfSectionsTag::new(
+            num, size, shndx, bytes,
+        )))
     }
 }
 

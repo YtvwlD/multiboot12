@@ -110,8 +110,12 @@ impl Header {
         &self, num: u32, size: u32, addr: usize, shndx: u32
     ) -> Symbols {
         match self {
-            Self::Multiboot(_) => Symbols::new_multiboot(num, size, addr, shndx),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot(_) => Symbols::new_multiboot(
+                num, size, addr, shndx
+            ),
+            Self::Multiboot2(_) => Symbols::new_multiboot2(
+                num, size, addr, shndx
+            ),
         }
     }
 }
