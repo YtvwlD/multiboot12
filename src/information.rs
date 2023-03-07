@@ -1,4 +1,5 @@
 use core::alloc::Layout;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::{collections::BTreeMap, alloc::dealloc};
 use alloc::alloc::alloc;
@@ -169,7 +170,14 @@ impl InfoBuilder {
                     }
                 }
             ),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => if let Some(mods) = modules {
+                for mo in mods {
+                    match mo {
+                        Module::Multiboot(_) => panic!("wrong Multiboot version"),
+                        Module::Multiboot2(m) => b.add_module_tag(m),
+                    }
+                }
+            },
         }
     }
 
@@ -355,7 +363,7 @@ impl MemoryType {
 
 pub enum Module<'a> {
     Multiboot(MultibootModule<'a>),
-    Multiboot2(ModuleTag),
+    Multiboot2(Box<ModuleTag>),
 }
 
 #[derive(Clone, Copy)]
