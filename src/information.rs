@@ -1,4 +1,5 @@
 use core::alloc::Layout;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::{collections::BTreeMap, alloc::dealloc};
 use alloc::alloc::alloc;
@@ -104,10 +105,14 @@ impl InfoBuilder {
         v
     }
 
-    pub fn new_module<'a>(&self, start: u64, end: u64, name: Option<&'a str>) -> Module<'a> {
+    pub fn new_module<'a>(&self, start: u32, end: u32, cmdline: Option<&'a str>) -> Module<'a> {
         match self {
-            Self::Multiboot(_) => Module::Multiboot(MultibootModule::new(start, end, name)),
-            Self::Multiboot2(_) => Module::Multiboot2(todo!()),
+            Self::Multiboot(_) => Module::Multiboot(MultibootModule::new(
+                start.into(), end.into(), cmdline,
+            )),
+            Self::Multiboot2(_) => Module::Multiboot2(ModuleTag::new(
+                start, end, cmdline.unwrap_or(""),
+            )),
         }
     }
 
@@ -169,7 +174,14 @@ impl InfoBuilder {
                     }
                 }
             ),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => if let Some(mods) = modules {
+                for mo in mods {
+                    match mo {
+                        Module::Multiboot(_) => panic!("wrong Multiboot version"),
+                        Module::Multiboot2(m) => b.add_module_tag(m),
+                    }
+                }
+            },
         }
     }
 
@@ -355,7 +367,7 @@ impl MemoryType {
 
 pub enum Module<'a> {
     Multiboot(MultibootModule<'a>),
-    Multiboot2(ModuleTag),
+    Multiboot2(Box<ModuleTag>),
 }
 
 #[derive(Clone, Copy)]
