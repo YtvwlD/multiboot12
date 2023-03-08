@@ -23,6 +23,7 @@ use multiboot2::{
     BootLoaderNameTag,
     CommandLineTag,
     ElfSectionsTag,
+    FramebufferField,
     FramebufferTag,
     FramebufferType,
     MemoryArea,
@@ -79,7 +80,20 @@ impl InfoBuilder {
                 blue_field_position,
                 blue_mask_size,
             })),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(_) => ColorInfo::Multiboot2(FramebufferType::RGB {
+                red: FramebufferField {
+                    position: red_field_position,
+                    size: red_mask_size,
+                },
+                green: FramebufferField {
+                    position: green_field_position,
+                    size: green_mask_size,
+                },
+                blue: FramebufferField {
+                    position: blue_field_position,
+                    size: blue_mask_size,
+                },
+            }),
         }
     }
 
@@ -149,7 +163,12 @@ impl InfoBuilder {
                     FramebufferInfo::Multiboot2(_) => panic!("wrong Multiboot version"),
                 })
             )),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => if let Some(tab) = table {
+                match tab {
+                    FramebufferInfo::Multiboot(_) => panic!("wrong Multiboot version"),
+                    FramebufferInfo::Multiboot2(t) => b.framebuffer_tag(t),
+                }
+            },
         }
     }
 
@@ -422,7 +441,9 @@ impl ColorInfo {
             Self::Multiboot(c) => FramebufferInfo::Multiboot(
                 FramebufferTable::new(addr, pitch, width, height, bpp, c)
             ),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(t) => FramebufferInfo::Multiboot2(
+                FramebufferTag::new(addr, pitch, width, height, bpp, t)
+            ),
         }
     }
 }
@@ -430,5 +451,5 @@ impl ColorInfo {
 #[derive(Debug)]
 pub enum FramebufferInfo {
     Multiboot(FramebufferTable),
-    Multiboot2(FramebufferTag<'static>),
+    Multiboot2(Box<FramebufferTag>),
 }
