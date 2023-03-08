@@ -53,15 +53,24 @@ impl InfoBuilder {
         Self::Multiboot2(Multiboot2InformationBuilder::new())
     }
 
-    pub fn build(self) -> (MultibootInfo, u32) {
+    /// Note: This allocates.
+    pub fn build(self) -> (Vec<u8>, u32) {
         match self {
             Self::Multiboot(bu) => {
                 let heads = bu.into_heads();
                 core::mem::forget(heads.allocator);
                 core::mem::forget(heads.memory_map_vec);
-                (heads.info, MULTIBOOT_EAX_SIGNATURE)
+                (
+                    unsafe { core::slice::from_raw_parts(
+                        &heads.info as *const MultibootInfo as *const u8,
+                        core::mem::size_of::<MultibootInfo>(),
+                    ) }.to_vec(),
+                    MULTIBOOT_EAX_SIGNATURE,
+                )
             },
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => (
+                b.build(), MULTIBOOT2_EAX_SIGNATURE
+            ),
         }
     }
 
