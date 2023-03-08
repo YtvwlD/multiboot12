@@ -29,6 +29,7 @@ use multiboot2::{
     FramebufferType,
     MemoryArea,
     MemoryAreaType,
+    MemoryMapTag,
     ModuleTag,
     MULTIBOOT2_BOOTLOADER_MAGIC as MULTIBOOT2_EAX_SIGNATURE,
 };
@@ -104,8 +105,7 @@ impl InfoBuilder {
                 MultibootMemoryEntry::new(base_addr, length, ty.to_multiboot())
             ),
             Self::Multiboot2(_) => MemoryEntry::Multiboot2(
-                //MemoryArea::new(base_addr, length, ty.to_multiboot2())
-                todo!()
+                MemoryArea::new(base_addr, length, ty.to_multiboot2())
             ),
         }
     }
@@ -113,7 +113,7 @@ impl InfoBuilder {
     pub fn allocate_memory_map_vec(&mut self, count: usize) -> Vec<MemoryEntry> {
         match self {
             Self::Multiboot(b) => b.allocate_memory_map_vec(count),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => (), // TODO
         }
         let mut v = Vec::new();
         v.resize_with(
@@ -182,7 +182,14 @@ impl InfoBuilder {
     pub fn set_memory_regions(&mut self, regions: Option<&[MemoryEntry]>) {
         match self {
             Self::Multiboot(b) => b.set_memory_regions(regions),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => if let Some(regs) = regions {
+                    let v: Vec<_> = regs.iter().map(|me| match me {
+                        MemoryEntry::Multiboot(_) => panic!("wrong Multiboot version"),
+                        MemoryEntry::Multiboot2(ma) => ma.clone(),
+                    }).collect();
+                    // TODO: this allocates
+                    b.memory_map_tag(MemoryMapTag::new(v.as_slice()))
+            },
         }
     }
 
