@@ -20,6 +20,7 @@ use multiboot::information::{
     SIGNATURE_EAX as MULTIBOOT_EAX_SIGNATURE,
 };
 use multiboot2::{
+    BasicMemoryInfoTag,
     BootLoaderNameTag,
     CommandLineTag,
     ElfSectionsTag,
@@ -155,7 +156,9 @@ impl InfoBuilder {
             Self::Multiboot(i) => i.with_wrap_mut(
                 |w| w.set_memory_bounds(bounds)
             ),
-            Self::Multiboot2(_) => todo!(),
+            Self::Multiboot2(b) => if let Some((lower, upper)) = bounds {
+                b.basic_memory_info_tag(BasicMemoryInfoTag::new(lower, upper))
+            },
         }
     }
 
