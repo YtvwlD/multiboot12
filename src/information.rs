@@ -54,23 +54,56 @@ impl InfoBuilder {
     }
 
     /// Note: This allocates.
-    pub fn build(self) -> (Vec<u8>, u32) {
+    pub fn build(self) -> (
+        Vec<u8>, u32, Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry])>,
+    ) {
         match self {
             Self::Multiboot(bu) => {
-                let heads = bu.into_heads();
-                core::mem::forget(heads.allocator);
-                core::mem::forget(heads.memory_map_vec);
+                let mut heads = bu.into_heads();
                 (
                     unsafe { core::slice::from_raw_parts(
                         &heads.info as *const MultibootInfo as *const u8,
                         core::mem::size_of::<MultibootInfo>(),
                     ) }.to_vec(),
                     MULTIBOOT_EAX_SIGNATURE,
+                    Box::new(move |info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry]| {
+                        let (_head, body, _tail) = unsafe {
+                            info_bytes.align_to_mut::<MultibootInfo>()
+                        };
+                        let mut info = &mut body[0];
+                        let mut multiboot = Multiboot::from_ref(
+                            &mut info, &mut heads.allocator,
+                        );
+                        multiboot.set_memory_bounds(Some((lower, upper)));
+                        MultibootInfoBuilder::copy_memory_regions(
+                            &mut heads.memory_map_vec, entries,
+                        );
+                    }),
                 )
             },
-            Self::Multiboot2(b) => (
-                b.build(), MULTIBOOT2_EAX_SIGNATURE
-            ),
+            Self::Multiboot2(b) => {
+                (
+                    b.build(), MULTIBOOT2_EAX_SIGNATURE,
+                    Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry]| {
+                        let mut info = unsafe {
+                            multiboot2::load(info_bytes.as_mut_ptr() as usize)
+                        }.unwrap();
+                        let mem_map_tag = info.memory_map_tag_mut().unwrap();
+                        entries.into_iter().zip(
+                            mem_map_tag.all_memory_areas_mut()
+                        ).for_each(
+                            |(source, destination)| match source {
+                                MemoryEntry::Multiboot(_)
+                                    => panic!("wrong Multiboot version"),
+                                MemoryEntry::Multiboot2(src)
+                                    => *destination = src.clone(),
+                            }
+                        );
+                        let mem_info_tag = info.basic_memory_info_tag_mut().unwrap();
+                        *mem_info_tag = BasicMemoryInfoTag::new(lower, upper);
+                    }),
+                )
+            },
         }
     }
 
@@ -122,7 +155,12 @@ impl InfoBuilder {
     pub fn allocate_memory_map_vec(&mut self, count: usize) -> Vec<MemoryEntry> {
         match self {
             Self::Multiboot(b) => b.allocate_memory_map_vec(count),
-            Self::Multiboot2(b) => (), // TODO
+            Self::Multiboot2(b) => {
+                // allocate empty memory entries
+                let mut v = Vec::new();
+                v.resize_with(count, || MemoryArea::new(0, 0, MemoryAreaType::Reserved));
+                b.memory_map_tag(MemoryMapTag::new(v.as_slice()));
+            },
         }
         let mut v = Vec::new();
         v.resize_with(
@@ -196,7 +234,6 @@ impl InfoBuilder {
                         MemoryEntry::Multiboot(_) => panic!("wrong Multiboot version"),
                         MemoryEntry::Multiboot2(ma) => ma.clone(),
                     }).collect();
-                    // TODO: this allocates
                     b.memory_map_tag(MemoryMapTag::new(v.as_slice()))
             },
         }
@@ -266,20 +303,25 @@ impl MultibootInfoBuilder {
         self.with_mut(|s|
             match regions {
                 None => s.wrap.set_memory_regions(None),
-                Some(mods) => {
-                    s.memory_map_vec.truncate(mods.len());
-                    mods.into_iter().zip(s.memory_map_vec.iter_mut()).for_each(
-                        |(source, destination)| match source {
-                            MemoryEntry::Multiboot(src) => *destination = *src,
-                            MemoryEntry::Multiboot2(_) => panic!("wrong Multiboot version"),
-                        }
-                    );
+                Some(regs) => {
+                    Self::copy_memory_regions(s.memory_map_vec, regs);
                     s.wrap.set_memory_regions(Some(
-                        (s.memory_map_vec.as_slice().as_ptr() as u64, mods.len())
+                        (s.memory_map_vec.as_slice().as_ptr() as u64, regs.len())
                     ))
                 }
             }
         )
+    }
+
+    /// Write the entries into the vec.
+    fn copy_memory_regions(memory_map_vec: &mut Vec<MultibootMemoryEntry>, regions: &[MemoryEntry]) {
+        memory_map_vec.truncate(regions.len());
+        regions.into_iter().zip(memory_map_vec.iter_mut()).for_each(
+            |(source, destination)| match source {
+                MemoryEntry::Multiboot(src) => *destination = *src,
+                MemoryEntry::Multiboot2(_) => panic!("wrong Multiboot version"),
+            }
+        );
     }
 }
 
@@ -348,6 +390,17 @@ pub enum MemoryEntry {
 }
 
 impl MemoryEntry {
+    pub fn with(&self, base_addr: u64, length: u64, ty: MemoryType) -> Self {
+        match self {
+            Self::Multiboot(_) => MemoryEntry::Multiboot(
+                MultibootMemoryEntry::new(base_addr, length, ty.to_multiboot())
+            ),
+            Self::Multiboot2(_) => MemoryEntry::Multiboot2(
+                MemoryArea::new(base_addr, length, ty.to_multiboot2())
+            ),
+        }
+    }
+
     pub fn base_address(&self) -> u64 {
         match self {
             Self::Multiboot(e) => e.base_address(),
