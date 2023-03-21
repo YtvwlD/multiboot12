@@ -13,7 +13,6 @@ use multiboot2_header::{
     ConsoleHeaderTag,
     EntryAddressHeaderTag,
     FramebufferHeaderTag,
-    HeaderTagType,
     Multiboot2Header,
 };
 
@@ -46,27 +45,15 @@ impl Header {
         match self {
             Self::Multiboot(h) => h.get_preferred_video_mode().map(|vm| VideoMode::Multiboot(vm)),
             Self::Multiboot2(h) => {
-                let mut console = None;
-                for tag_ptr in h.borrow_header().iter() {
-                    let tag = unsafe { tag_ptr.as_ref() }.unwrap();
-                    match tag.typ() {
-                        HeaderTagType::Framebuffer => return Some(
-                            VideoMode::Multiboot2(
-                                Multiboot2VideoMode::LinearGraphics(unsafe {
-                                    (tag_ptr as *const FramebufferHeaderTag)
-                                    .as_ref()
-                                }.unwrap())
-                            )
-                        ),
-                        HeaderTagType::ConsoleFlags => console = Some(tag_ptr),
-                        _ => (),
+                if let Some(fb) = h.borrow_header().framebuffer_tag() {
+                    Some(VideoMode::Multiboot2(Multiboot2VideoMode::LinearGraphics(fb)))
+                } else {
+                    if let Some(ct) = h.borrow_header().console_flags_tag() {
+                        Some(VideoMode::Multiboot2(Multiboot2VideoMode::TextMode(ct)))
+                    } else {
+                        None
                     }
                 }
-                console.map(|ct| VideoMode::Multiboot2(
-                    Multiboot2VideoMode::TextMode(unsafe {
-                        (ct as *const ConsoleHeaderTag).as_ref()
-                    }.unwrap())
-                ))
             }
         }
     }
@@ -77,22 +64,13 @@ impl Header {
                 |a| Addresses::Multiboot(a)
             ),
             Self::Multiboot2(h) => {
-                let mut addr = None;
-                let mut entry = None;
-                for tag_ptr in h.borrow_header().iter() {
-                    let tag = unsafe { tag_ptr.as_ref() }.unwrap();
-                    match tag.typ() {
-                        HeaderTagType::EntryAddress => entry = Some(tag_ptr as *const EntryAddressHeaderTag),
-                        HeaderTagType::Address => addr = Some(tag_ptr as *const AddressHeaderTag),
-                        _ => (),
-                    }
-                }
-                if addr.is_none() && entry.is_none() {
+                let addresses = h.borrow_header().address_tag().copied();
+                let entry = h.borrow_header().entry_address_tag().copied();
+                if addresses.is_none() && entry.is_none() {
                     None
                 } else {
                     Some(Addresses::Multiboot2(Multiboot2Addresses {
-                        addresses: addr.map(|a| unsafe { a.as_ref() }.unwrap().clone()),
-                        entry: entry.map(|e| unsafe { e.as_ref() }.unwrap().clone()),
+                        addresses, entry,
                     }))
                 }
             }
