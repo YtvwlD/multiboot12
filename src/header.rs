@@ -11,7 +11,6 @@ use multiboot::header::{
 use multiboot2_header::{
     AddressHeaderTag,
     ConsoleHeaderTag,
-    EntryAddressHeaderTag,
     FramebufferHeaderTag,
     Multiboot2Header,
 };
@@ -58,21 +57,28 @@ impl Header {
         }
     }
 
-    pub fn get_addresses(&self) -> Option<Addresses> {
+    pub fn get_load_addresses(&self) -> Option<Addresses> {
         match self {
             Self::Multiboot(h) => h.get_addresses().map(
                 |a| Addresses::Multiboot(a)
             ),
             Self::Multiboot2(h) => {
-                let addresses = h.borrow_header().address_tag().copied();
-                let entry = h.borrow_header().entry_address_tag().copied();
-                if addresses.is_none() && entry.is_none() {
-                    None
-                } else {
-                    Some(Addresses::Multiboot2(Multiboot2Addresses {
-                        addresses, entry,
-                    }))
-                }
+                h.borrow_header()
+                    .address_tag()
+                    .map(|a| Addresses::Multiboot2(*a))
+            }
+        }
+    }
+
+    pub fn get_entry_address(&self) -> Option<u32> {
+        match self {
+            Self::Multiboot(h) => h.get_addresses().map(
+                |a| a.entry_address
+            ),
+            Self::Multiboot2(h) => {
+                h.borrow_header().entry_address_tag().map(
+                    |t| t.entry_addr()
+                )
             }
         }
     }
@@ -131,14 +137,16 @@ impl Multiboot2HeaderWrap {
 
 pub enum Addresses {
     Multiboot(MultibootAddresses),
-    Multiboot2(Multiboot2Addresses),
+    Multiboot2(AddressHeaderTag),
 }
 
 impl Addresses {
     pub fn compute_load_offset(&self, header_start: u32) -> u32 {
         match self {
             Self::Multiboot(a) => a.compute_load_offset(header_start),
-            Self::Multiboot2(a) => a.compute_load_offset(header_start),
+            Self::Multiboot2(a) => header_start - (
+                a.header_addr() - a.load_addr()
+            ),
         }
     }
 
@@ -147,13 +155,6 @@ impl Addresses {
             self.load_end_addr() - self.load_addr()
         } else {
             self.bss_end_addr() - self.load_addr()
-        }
-    }
-
-    pub fn entry_addr(&self) -> u32 {
-        match self {
-            Self::Multiboot(a) => a.entry_address,
-            Self::Multiboot2(a) => a.entry_addr(),
         }
     }
 
@@ -176,37 +177,6 @@ impl Addresses {
             Self::Multiboot(a) => a.load_end_address,
             Self::Multiboot2(a) => a.load_end_addr(),
         }
-    }
-}
-
-pub struct Multiboot2Addresses {
-    addresses: Option<AddressHeaderTag>,
-    entry: Option<EntryAddressHeaderTag>,
-}
-
-impl Multiboot2Addresses {
-    pub fn compute_load_offset(&self, header_start: u32) -> u32 {
-        // TODO
-        header_start - (
-            self.addresses.unwrap().header_addr()
-             - self.addresses.unwrap().load_addr()
-        )
-    }
-
-    fn entry_addr(&self) -> u32 {
-        self.entry.unwrap().entry_addr()
-    }
-
-    fn bss_end_addr(&self) -> u32 {
-        self.addresses.unwrap().bss_end_addr()
-    }
-
-    fn load_addr(&self) -> u32 {
-        self.addresses.unwrap().load_addr()
-    }
-
-    fn load_end_addr(&self) -> u32 {
-        self.addresses.unwrap().load_end_addr()
     }
 }
 
