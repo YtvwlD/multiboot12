@@ -150,11 +150,22 @@ impl Addresses {
         }
     }
 
-    pub fn compute_kernel_length(&self) -> u32 {
+    pub fn compute_kernel_length(&self, whole_length: u32) -> u32 {
         if self.bss_end_addr() == 0 {
-            self.load_end_addr() - self.load_addr()
+            if self.load_end_addr() == 0 {
+                self.header_addr() + whole_length - self.load_addr()
+            } else {
+                self.load_end_addr() - self.load_addr()
+            }
         } else {
             self.bss_end_addr() - self.load_addr()
+        }
+    }
+
+    fn header_addr(&self) -> u32 {
+        match self {
+            Self::Multiboot(a) => a.header_address,
+            Self::Multiboot2(a) => a.header_addr(),
         }
     }
 
