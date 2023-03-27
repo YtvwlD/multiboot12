@@ -23,6 +23,7 @@ use multiboot2::{
     BasicMemoryInfoTag,
     BootLoaderNameTag,
     CommandLineTag,
+    EFISdt32, EFISdt64,
     ElfSectionsTag,
     FramebufferField,
     FramebufferTag,
@@ -279,6 +280,24 @@ impl InfoBuilder {
                         b.elf_sections_tag(s)
                     }
                 }
+            },
+        }
+    }
+
+    pub fn set_system_table_ia32(&mut self, systab: Option<u32>) {
+        match self {
+            Self::Multiboot(_) => (), // not suppported on Multiboot1
+            Self::Multiboot2(b) => if let Some(st) = systab {
+                b.efisdt32(EFISdt32::new(st))
+            },
+        }
+    }
+
+    pub fn set_system_table_x64(&mut self, systab: Option<u64>) {
+        match self {
+            Self::Multiboot(_) => (), // not suppported on Multiboot1
+            Self::Multiboot2(b) => if let Some(st) = systab {
+                b.efisdt64(EFISdt64::new(st))
             },
         }
     }
