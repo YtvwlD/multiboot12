@@ -33,6 +33,7 @@ use multiboot2::{
     MemoryMapTag,
     ModuleTag,
     MULTIBOOT2_BOOTLOADER_MAGIC as MULTIBOOT2_EAX_SIGNATURE,
+    SmbiosTag,
 };
 use multiboot2::builder::Multiboot2InformationBuilder;
 use ouroboros::self_referencing;
@@ -262,6 +263,15 @@ impl InfoBuilder {
                     }
                 }
             },
+        }
+    }
+
+    pub fn add_smbios_tag(&mut self, major: u8, minor: u8, tables: &[u8]) {
+        match self {
+            Self::Multiboot(_) => (), // not suppported on Multiboot1
+            Self::Multiboot2(b) => b.add_smbios_tag(
+                SmbiosTag::new(major, minor, tables)
+            ),
         }
     }
 
