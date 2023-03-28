@@ -33,7 +33,7 @@ use multiboot2::{
     MemoryMapTag,
     ModuleTag,
     MULTIBOOT2_BOOTLOADER_MAGIC as MULTIBOOT2_EAX_SIGNATURE,
-    SmbiosTag,
+    RsdpV1Tag, RsdpV2Tag, SmbiosTag,
 };
 use multiboot2::builder::Multiboot2InformationBuilder;
 use ouroboros::self_referencing;
@@ -263,6 +263,32 @@ impl InfoBuilder {
                     }
                 }
             },
+        }
+    }
+
+    pub fn set_rsdp_v1(
+        &mut self, signature: [u8; 8], checksum: u8, oem_id: [u8; 6],
+        revision: u8, rsdt_address: u32,
+    ) {
+        match self {
+            Self::Multiboot(_) => (), // not supported on Multiboot1
+            Self::Multiboot2(b) => b.rsdp_v1_tag(RsdpV1Tag::new(
+                signature, checksum, oem_id, revision, rsdt_address,
+            )),
+        }
+    }
+
+    pub fn set_rsdp_v2(
+        &mut self, signature: [u8; 8], checksum: u8, oem_id: [u8; 6],
+        revision: u8, rsdt_address: u32, length: u32, xsdt_address: u64,
+        ext_checksum: u8,
+    ) {
+        match self {
+            Self::Multiboot(_) => (), // not supported on Multiboot1
+            Self::Multiboot2(b) => b.rsdp_v2_tag(RsdpV2Tag::new(
+                signature, checksum, oem_id, revision, rsdt_address, length,
+                xsdt_address, ext_checksum,
+            )),
         }
     }
 
