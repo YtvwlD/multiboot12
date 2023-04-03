@@ -23,7 +23,7 @@ use multiboot2::{
     BasicMemoryInfoTag,
     BootLoaderNameTag,
     CommandLineTag,
-    EFISdt32, EFISdt64,
+    EFISdt32, EFISdt64, EFIMemoryMapTag,
     ElfSectionsTag,
     FramebufferField,
     FramebufferTag,
@@ -35,6 +35,7 @@ use multiboot2::{
     MULTIBOOT2_BOOTLOADER_MAGIC as MULTIBOOT2_EAX_SIGNATURE,
     RsdpV1Tag, RsdpV2Tag, SmbiosTag,
 };
+pub use multiboot2::EFIMemoryDesc as EfiMemoryDescriptor;
 use multiboot2::builder::Multiboot2InformationBuilder;
 use ouroboros::self_referencing;
 
@@ -57,7 +58,8 @@ impl InfoBuilder {
 
     /// Note: This allocates.
     pub fn build(self) -> (
-        Vec<u8>, u32, Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry])>,
+        Vec<u8>, u32,
+        Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry], Option<&[EfiMemoryDescriptor]>)>,
     ) {
         match self {
             Self::Multiboot(bu) => {
@@ -68,7 +70,7 @@ impl InfoBuilder {
                         core::mem::size_of::<MultibootInfo>(),
                     ) }.to_vec(),
                     MULTIBOOT_EAX_SIGNATURE,
-                    Box::new(move |info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry]| {
+                    Box::new(move |info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], _efi_mmap: Option<&[EfiMemoryDescriptor]>| {
                         let (_head, body, _tail) = unsafe {
                             info_bytes.align_to_mut::<MultibootInfo>()
                         };
@@ -86,7 +88,7 @@ impl InfoBuilder {
             Self::Multiboot2(b) => {
                 (
                     b.build(), MULTIBOOT2_EAX_SIGNATURE,
-                    Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry]| {
+                    Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], efi_mmap: Option<&[EfiMemoryDescriptor]>| {
                         let mut info = unsafe {
                             multiboot2::load(info_bytes.as_mut_ptr() as usize)
                         }.unwrap();
@@ -103,6 +105,12 @@ impl InfoBuilder {
                         );
                         let mem_info_tag = info.basic_memory_info_tag_mut().unwrap();
                         *mem_info_tag = BasicMemoryInfoTag::new(lower, upper);
+                        if let Some(mmap) = efi_mmap {
+                            let efi_mmap_tag = info.efi_memory_map_tag_mut().unwrap();
+                            mmap.into_iter().zip(
+                                efi_mmap_tag.memory_areas_mut()
+                            ).for_each(|(src, dest)| *dest = src.clone() );
+                        }
                     }),
                 )
             },
@@ -169,6 +177,19 @@ impl InfoBuilder {
             count, || self.new_memory_entry(0, 0, MemoryType::Reserved),
         );
         v
+    }
+
+    pub fn allocate_efi_memory_map_vec(&mut self, count: usize) {
+        match self {
+            // Multiboot1 doesn't support passing EFI memory maps.
+            Self::Multiboot(_) => (),
+            Self::Multiboot2(b) => {
+                // allocate empty memory entries
+                let mut v = Vec::new();
+                v.resize(count, EfiMemoryDescriptor::default());
+                b.efi_memory_map_tag(EFIMemoryMapTag::new(v.as_slice()));
+            },
+        }
     }
 
     pub fn new_module<'a>(&self, start: u32, end: u32, cmdline: Option<&'a str>) -> Module<'a> {
