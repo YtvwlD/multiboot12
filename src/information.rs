@@ -212,6 +212,14 @@ impl InfoBuilder {
         }
     }
 
+    pub fn set_boot_services_not_exited(&mut self) {
+        match self {
+            // Multiboot1 doesn't know this.
+            Self::Multiboot(_) => (),
+            Self::Multiboot2(b) => b.efi_boot_services_not_exited(),
+        }
+    }
+
     pub fn set_command_line(&mut self, cmdline: Option<&str>) {
         match self {
             Self::Multiboot(b) => b.with_wrap_mut(|w| w.set_command_line(cmdline)),
