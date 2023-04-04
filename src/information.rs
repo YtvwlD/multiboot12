@@ -28,6 +28,7 @@ use multiboot2::{
     FramebufferField,
     FramebufferTag,
     FramebufferType,
+    ImageLoadPhysAddr,
     MemoryArea,
     MemoryAreaType,
     MemoryMapTag,
@@ -272,6 +273,13 @@ impl InfoBuilder {
                     FramebufferInfo::Multiboot2(t) => b.framebuffer_tag(t),
                 }
             },
+        }
+    }
+
+    pub fn set_image_load_addr(&mut self, addr: u32) {
+        match self {
+            Self::Multiboot(_) => (), // Multiboot1 doesn't know this
+            Self::Multiboot2(b) => b.image_load_addr(ImageLoadPhysAddr::new(addr)),
         }
     }
 
