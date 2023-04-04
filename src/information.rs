@@ -23,7 +23,7 @@ use multiboot2::{
     BasicMemoryInfoTag,
     BootLoaderNameTag,
     CommandLineTag,
-    EFISdt32, EFISdt64, EFIMemoryMapTag,
+    EFIImageHandle32, EFIImageHandle64, EFIMemoryMapTag, EFISdt32, EFISdt64,
     ElfSectionsTag,
     FramebufferField,
     FramebufferTag,
@@ -226,6 +226,24 @@ impl InfoBuilder {
             Self::Multiboot2(b) => if let Some(c) = cmdline {
                 b.command_line_tag(CommandLineTag::new(c))
             },
+        }
+    }
+
+    pub fn set_efi_image_handle32(&mut self, pointer: u32) {
+        match self {
+            Self::Multiboot(_) => (), // Multiboot1 doesn't know about this
+            Self::Multiboot2(b) => b.efi_image_handle32(
+                EFIImageHandle32::new(pointer)
+            ),
+        }
+    }
+
+    pub fn set_efi_image_handle64(&mut self, pointer: u64) {
+        match self {
+            Self::Multiboot(_) => (), // Multiboot1 doesn't know about this
+            Self::Multiboot2(b) => b.efi_image_handle64(
+                EFIImageHandle64::new(pointer)
+            ),
         }
     }
 
