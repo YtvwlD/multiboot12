@@ -118,6 +118,14 @@ impl Header {
             ),
         }
     }
+
+    pub fn should_exit_boot_services(&self) -> bool {
+        match self {
+            Self::Multiboot(_) => true, // Multiboot1 doesn't know about this
+            Self::Multiboot2(w) => w.borrow_header().efi_boot_services_tag()
+                .is_none(),
+        }
+    }
 }
 
 #[self_referencing]
