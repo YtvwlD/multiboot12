@@ -70,6 +70,22 @@ impl Header {
         }
     }
 
+    pub fn get_efi32_entry_address(&self) -> Option<u32> {
+        match self {
+            Self::Multiboot(_) => None, // Multiboot1 doesn't support this
+            Self::Multiboot2(w) => w.borrow_header().entry_address_efi32_tag()
+                .map(|t| t.entry_addr()),
+        }
+    }
+
+    pub fn get_efi64_entry_address(&self) -> Option<u32> {
+        match self {
+            Self::Multiboot(_) => None, // Multiboot1 doesn't support this
+            Self::Multiboot2(w) => w.borrow_header().entry_address_efi64_tag()
+                .map(|t| t.entry_addr()),
+        }
+    }
+
     pub fn get_entry_address(&self) -> Option<u32> {
         match self {
             Self::Multiboot(h) => h.get_addresses().map(
