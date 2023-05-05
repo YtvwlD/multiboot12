@@ -16,6 +16,7 @@ use multiboot::information::{
     MemoryEntry as MultibootMemoryEntry,
     MemoryType as MultibootMemoryType,
     Module as MultibootModule,
+    PAddr,
     SymbolType,
     SIGNATURE_EAX as MULTIBOOT_EAX_SIGNATURE,
 };
@@ -407,7 +408,10 @@ pub struct MultibootInfoBuilder {
 
 impl MultibootInfoBuilder {
     fn allocate_memory_map_vec(&mut self, count: usize) {
-        self.with_memory_map_vec_mut(|v| v.resize(count, MultibootMemoryEntry::default()))
+        self.with_mut(|f| {
+            f.memory_map_vec.resize(count, MultibootMemoryEntry::default());
+            f.wrap.set_memory_regions(Some((f.memory_map_vec.as_slice().as_ptr() as PAddr, count)));
+        })
     }
 
     fn set_memory_regions(&mut self, regions: Option<&[MemoryEntry]>) {
@@ -417,7 +421,7 @@ impl MultibootInfoBuilder {
                 Some(regs) => {
                     Self::copy_memory_regions(s.memory_map_vec, regs);
                     s.wrap.set_memory_regions(Some(
-                        (s.memory_map_vec.as_slice().as_ptr() as u64, regs.len())
+                        (s.memory_map_vec.as_slice().as_ptr() as PAddr, regs.len())
                     ))
                 }
             }
