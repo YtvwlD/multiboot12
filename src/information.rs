@@ -58,6 +58,7 @@ impl InfoBuilder {
     }
 
     /// Note: This allocates.
+    /// Also, since the return value contains a Box, dropping it deallocates.
     pub fn build(self) -> (
         Vec<u8>, u32,
         Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry], Option<&[EfiMemoryDescriptor]>)>,
