@@ -12,6 +12,7 @@ use multiboot2_header::{
     AddressHeaderTag,
     ConsoleHeaderTag,
     FramebufferHeaderTag,
+    Multiboot2BasicHeader,
     Multiboot2Header,
 };
 
@@ -150,8 +151,8 @@ impl Multiboot2HeaderWrap {
             header_builder: |header_pin: &Pin<Box<[u8]>>| unsafe {
                 // yes, that's bad, but making it better would mean modifying
                 // the multiboot2 crate
-                Multiboot2Header::from_addr(
-                    header_pin.as_ref().as_ptr() as usize
+                Multiboot2Header::load(
+                    header_pin.as_ref().as_ptr() as *const Multiboot2BasicHeader
                 ).unwrap() // `find_header` should have failed already.
             }
         }.build())

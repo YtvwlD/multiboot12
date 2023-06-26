@@ -22,23 +22,26 @@ use multiboot::information::{
 };
 use multiboot2::{
     BasicMemoryInfoTag,
+    BootInformation as Multiboot2BootInformation,
+    BootInformationHeader as Multiboot2BootInformationHeader,
     BootLoaderNameTag,
     CommandLineTag,
-    EFIImageHandle32, EFIImageHandle64, EFIMemoryMapTag, EFISdt32, EFISdt64,
+    EFIImageHandle32Tag, EFIImageHandle64Tag, EFIMemoryMapTag,
+    EFISdt32Tag, EFISdt64Tag,
     ElfSectionsTag,
     FramebufferField,
     FramebufferTag,
     FramebufferType,
-    ImageLoadPhysAddr,
+    ImageLoadPhysAddrTag,
     MemoryArea,
     MemoryAreaType,
     MemoryMapTag,
     ModuleTag,
-    MULTIBOOT2_BOOTLOADER_MAGIC as MULTIBOOT2_EAX_SIGNATURE,
+    MAGIC as MULTIBOOT2_EAX_SIGNATURE,
     RsdpV1Tag, RsdpV2Tag, SmbiosTag,
 };
 pub use multiboot2::EFIMemoryDesc as EfiMemoryDescriptor;
-use multiboot2::builder::Multiboot2InformationBuilder;
+use multiboot2::builder::{BoxedDst, InformationBuilder as Multiboot2InformationBuilder};
 use ouroboros::self_referencing;
 
 pub enum InfoBuilder {
@@ -90,10 +93,10 @@ impl InfoBuilder {
             },
             Self::Multiboot2(b) => {
                 (
-                    b.build(), MULTIBOOT2_EAX_SIGNATURE,
+                    b.build().to_vec(), MULTIBOOT2_EAX_SIGNATURE,
                     Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], efi_mmap: Option<&[EfiMemoryDescriptor]>| {
                         let mut info = unsafe {
-                            multiboot2::load(info_bytes.as_mut_ptr() as usize)
+                            Multiboot2BootInformation::load(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
                         }.unwrap();
                         let mem_map_tag = info.memory_map_tag_mut().unwrap();
                         entries.into_iter().zip(
@@ -106,8 +109,14 @@ impl InfoBuilder {
                                     => *destination = src.clone(),
                             }
                         );
+                        let mut info = unsafe {
+                            Multiboot2BootInformation::load(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                        }.unwrap();
                         let mem_info_tag = info.basic_memory_info_tag_mut().unwrap();
                         *mem_info_tag = BasicMemoryInfoTag::new(lower, upper);
+                        let mut info = unsafe {
+                            Multiboot2BootInformation::load(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                        }.unwrap();
                         if let Some(mmap) = efi_mmap {
                             let efi_mmap_tag = info.efi_memory_map_tag_mut().unwrap();
                             mmap.into_iter().zip(
@@ -222,7 +231,7 @@ impl InfoBuilder {
         match self {
             // Multiboot1 doesn't know this.
             Self::Multiboot(_) => (),
-            Self::Multiboot2(b) => b.efi_boot_services_not_exited(),
+            Self::Multiboot2(b) => b.efi_boot_services_not_exited_tag(),
         }
     }
 
@@ -239,7 +248,7 @@ impl InfoBuilder {
         match self {
             Self::Multiboot(_) => (), // Multiboot1 doesn't know about this
             Self::Multiboot2(b) => b.efi_image_handle32(
-                EFIImageHandle32::new(pointer)
+                EFIImageHandle32Tag::new(pointer)
             ),
         }
     }
@@ -248,7 +257,7 @@ impl InfoBuilder {
         match self {
             Self::Multiboot(_) => (), // Multiboot1 doesn't know about this
             Self::Multiboot2(b) => b.efi_image_handle64(
-                EFIImageHandle64::new(pointer)
+                EFIImageHandle64Tag::new(pointer)
             ),
         }
     }
@@ -284,7 +293,7 @@ impl InfoBuilder {
     pub fn set_image_load_addr(&mut self, addr: u32) {
         match self {
             Self::Multiboot(_) => (), // Multiboot1 doesn't know this
-            Self::Multiboot2(b) => b.image_load_addr(ImageLoadPhysAddr::new(addr)),
+            Self::Multiboot2(b) => b.image_load_addr(ImageLoadPhysAddrTag::new(addr)),
         }
     }
 
@@ -384,7 +393,7 @@ impl InfoBuilder {
         match self {
             Self::Multiboot(_) => (), // not suppported on Multiboot1
             Self::Multiboot2(b) => if let Some(st) = systab {
-                b.efisdt32(EFISdt32::new(st))
+                b.efisdt32_tag(EFISdt32Tag::new(st))
             },
         }
     }
@@ -393,7 +402,7 @@ impl InfoBuilder {
         match self {
             Self::Multiboot(_) => (), // not suppported on Multiboot1
             Self::Multiboot2(b) => if let Some(st) = systab {
-                b.efisdt64(EFISdt64::new(st))
+                b.efisdt64_tag(EFISdt64Tag::new(st))
             },
         }
     }
@@ -587,12 +596,12 @@ impl MemoryType {
 
 pub enum Module<'a> {
     Multiboot(MultibootModule<'a>),
-    Multiboot2(Box<ModuleTag>),
+    Multiboot2(BoxedDst<ModuleTag>),
 }
 
 pub enum Symbols {
     Multiboot(SymbolType),
-    Multiboot2(Option<Box<ElfSectionsTag>>),
+    Multiboot2(Option<BoxedDst<ElfSectionsTag>>),
 }
 
 impl Symbols {
@@ -645,5 +654,5 @@ impl ColorInfo {
 #[derive(Debug)]
 pub enum FramebufferInfo {
     Multiboot(FramebufferTable),
-    Multiboot2(Box<FramebufferTag>),
+    Multiboot2(BoxedDst<FramebufferTag>),
 }
