@@ -182,7 +182,7 @@ impl InfoBuilder {
         v
     }
 
-    pub fn allocate_efi_memory_map_vec(&mut self, count: usize) {
+    pub fn allocate_efi_memory_map_vec(&mut self, count: usize) -> Vec<EfiMemoryDescriptor> {
         match self {
             // Multiboot1 doesn't support passing EFI memory maps.
             Self::Multiboot(_) => (),
@@ -193,6 +193,9 @@ impl InfoBuilder {
                 b.efi_memory_map_tag(EFIMemoryMapTag::new(v.as_slice()));
             },
         }
+        let mut v = Vec::new();
+        v.resize(count, EfiMemoryDescriptor::default());
+        v
     }
 
     pub fn new_module<'a>(&self, start: u32, end: u32, cmdline: Option<&'a str>) -> Module<'a> {

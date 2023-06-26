@@ -141,7 +141,7 @@ pub struct Multiboot2HeaderWrap {
 impl Multiboot2HeaderWrap {
     fn from_slice(buffer: &[u8]) -> Option<Self> {
         // first, find the header
-        let (header_buf, header_start) = Multiboot2Header::find_header(buffer)?;
+        let (header_buf, header_start) = Multiboot2Header::find_header(buffer).ok()??;
         // then, copy it
         let header_pin = Box::into_pin(header_buf.to_vec().into_boxed_slice());
         Some(Multiboot2HeaderWrapBuilder {
@@ -152,7 +152,7 @@ impl Multiboot2HeaderWrap {
                 // the multiboot2 crate
                 Multiboot2Header::from_addr(
                     header_pin.as_ref().as_ptr() as usize
-                )
+                ).unwrap() // `find_header` should have failed already.
             }
         }.build())
     }
