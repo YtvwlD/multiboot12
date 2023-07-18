@@ -1,4 +1,5 @@
 use core::alloc::Layout;
+use core::cell::Cell;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::slice;
@@ -46,7 +47,7 @@ use ouroboros::self_referencing;
 
 pub enum InfoBuilder {
     Multiboot(MultibootInfoBuilder),
-    Multiboot2(Multiboot2InformationBuilder),
+    Multiboot2(UpdateCell<Multiboot2InformationBuilder>),
 }
 
 impl InfoBuilder {
@@ -58,7 +59,7 @@ impl InfoBuilder {
     }
 
     pub(crate) fn new_multiboot2() -> Self {
-        Self::Multiboot2(Multiboot2InformationBuilder::new())
+        Self::Multiboot2(UpdateCell::new(Multiboot2InformationBuilder::new()))
     }
 
     /// Note: This allocates.
@@ -91,12 +92,12 @@ impl InfoBuilder {
                     }),
                 )
             },
-            Self::Multiboot2(b) => {
+            Self::Multiboot2(c) => {
                 (
-                    b.build().to_vec(), MULTIBOOT2_EAX_SIGNATURE,
+                    c.into_inner().build().to_vec(), MULTIBOOT2_EAX_SIGNATURE,
                     Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], efi_mmap: Option<&[EfiMemoryDescriptor]>| {
                         let mut info = unsafe {
-                            Multiboot2BootInformation::load(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                            Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
                         }.unwrap();
                         let mem_map_tag = info.memory_map_tag_mut().unwrap();
                         entries.into_iter().zip(
@@ -110,12 +111,12 @@ impl InfoBuilder {
                             }
                         );
                         let mut info = unsafe {
-                            Multiboot2BootInformation::load(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                            Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
                         }.unwrap();
                         let mem_info_tag = info.basic_memory_info_tag_mut().unwrap();
                         *mem_info_tag = BasicMemoryInfoTag::new(lower, upper);
                         let mut info = unsafe {
-                            Multiboot2BootInformation::load(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                            Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
                         }.unwrap();
                         if let Some(mmap) = efi_mmap {
                             let efi_mmap_tag = info.efi_memory_map_tag_mut().unwrap();
@@ -177,11 +178,11 @@ impl InfoBuilder {
     pub fn allocate_memory_map_vec(&mut self, count: usize) -> Vec<MemoryEntry> {
         match self {
             Self::Multiboot(b) => b.allocate_memory_map_vec(count),
-            Self::Multiboot2(b) => {
+            Self::Multiboot2(c) => {
                 // allocate empty memory entries
                 let mut v = Vec::new();
                 v.resize_with(count, || MemoryArea::new(0, 0, MemoryAreaType::Reserved));
-                b.memory_map_tag(MemoryMapTag::new(v.as_slice()));
+                c.update(|b| b.memory_map_tag(MemoryMapTag::new(v.as_slice())))
             },
         }
         let mut v = Vec::new();
@@ -195,11 +196,11 @@ impl InfoBuilder {
         match self {
             // Multiboot1 doesn't support passing EFI memory maps.
             Self::Multiboot(_) => (),
-            Self::Multiboot2(b) => {
+            Self::Multiboot2(c) => {
                 // allocate empty memory entries
                 let mut v = Vec::new();
                 v.resize(count, EfiMemoryDescriptor::default());
-                b.efi_memory_map_tag(EFIMemoryMapTag::new(v.as_slice()));
+                c.update(|b| b.efi_memory_map_tag(EFIMemoryMapTag::new(v.as_slice())))
             },
         }
         let mut v = Vec::new();
@@ -221,8 +222,8 @@ impl InfoBuilder {
      pub fn set_boot_loader_name(&mut self, name: Option<&str>) {
         match self {
             Self::Multiboot(b) => b.with_wrap_mut(|w| w.set_boot_loader_name(name)),
-            Self::Multiboot2(b) => if let Some(n) = name {
-                b.bootloader_name_tag(BootLoaderNameTag::new(n))
+            Self::Multiboot2(c) => if let Some(n) = name {
+                c.update(|b| b.bootloader_name_tag(BootLoaderNameTag::new(n)))
             },
         }
     }
@@ -231,15 +232,15 @@ impl InfoBuilder {
         match self {
             // Multiboot1 doesn't know this.
             Self::Multiboot(_) => (),
-            Self::Multiboot2(b) => b.efi_boot_services_not_exited_tag(),
+            Self::Multiboot2(c) => c.update(|b| b.efi_boot_services_not_exited_tag())
         }
     }
 
     pub fn set_command_line(&mut self, cmdline: Option<&str>) {
         match self {
             Self::Multiboot(b) => b.with_wrap_mut(|w| w.set_command_line(cmdline)),
-            Self::Multiboot2(b) => if let Some(c) = cmdline {
-                b.command_line_tag(CommandLineTag::new(c))
+            Self::Multiboot2(cell) => if let Some(cmd) = cmdline {
+                cell.update(|b| b.command_line_tag(CommandLineTag::new(cmd)))
             },
         }
     }
@@ -247,18 +248,18 @@ impl InfoBuilder {
     pub fn set_efi_image_handle32(&mut self, pointer: u32) {
         match self {
             Self::Multiboot(_) => (), // Multiboot1 doesn't know about this
-            Self::Multiboot2(b) => b.efi_image_handle32(
+            Self::Multiboot2(c) => c.update(|b| b.efi_image_handle32(
                 EFIImageHandle32Tag::new(pointer)
-            ),
+            )),
         }
     }
 
     pub fn set_efi_image_handle64(&mut self, pointer: u64) {
         match self {
             Self::Multiboot(_) => (), // Multiboot1 doesn't know about this
-            Self::Multiboot2(b) => b.efi_image_handle64(
+            Self::Multiboot2(c) => c.update(|b| b.efi_image_handle64(
                 EFIImageHandle64Tag::new(pointer)
-            ),
+            )),
         }
     }
 
@@ -267,8 +268,8 @@ impl InfoBuilder {
             Self::Multiboot(i) => i.with_wrap_mut(
                 |w| w.set_memory_bounds(bounds)
             ),
-            Self::Multiboot2(b) => if let Some((lower, upper)) = bounds {
-                b.basic_memory_info_tag(BasicMemoryInfoTag::new(lower, upper))
+            Self::Multiboot2(c) => if let Some((lower, upper)) = bounds {
+                c.update(|b| b.basic_memory_info_tag(BasicMemoryInfoTag::new(lower, upper)))
             },
         }
     }
@@ -281,10 +282,10 @@ impl InfoBuilder {
                     FramebufferInfo::Multiboot2(_) => panic!("wrong Multiboot version"),
                 })
             )),
-            Self::Multiboot2(b) => if let Some(tab) = table {
+            Self::Multiboot2(c) => if let Some(tab) = table {
                 match tab {
                     FramebufferInfo::Multiboot(_) => panic!("wrong Multiboot version"),
-                    FramebufferInfo::Multiboot2(t) => b.framebuffer_tag(t),
+                    FramebufferInfo::Multiboot2(t) => c.update(|b| b.framebuffer_tag(t)),
                 }
             },
         }
@@ -293,19 +294,19 @@ impl InfoBuilder {
     pub fn set_image_load_addr(&mut self, addr: u32) {
         match self {
             Self::Multiboot(_) => (), // Multiboot1 doesn't know this
-            Self::Multiboot2(b) => b.image_load_addr(ImageLoadPhysAddrTag::new(addr)),
+            Self::Multiboot2(c) => c.update(|b| b.image_load_addr(ImageLoadPhysAddrTag::new(addr))),
         }
     }
 
     pub fn set_memory_regions(&mut self, regions: Option<&[MemoryEntry]>) {
         match self {
             Self::Multiboot(b) => b.set_memory_regions(regions),
-            Self::Multiboot2(b) => if let Some(regs) = regions {
+            Self::Multiboot2(c) => if let Some(regs) = regions {
                     let v: Vec<_> = regs.iter().map(|me| match me {
                         MemoryEntry::Multiboot(_) => panic!("wrong Multiboot version"),
                         MemoryEntry::Multiboot2(ma) => ma.clone(),
                     }).collect();
-                    b.memory_map_tag(MemoryMapTag::new(v.as_slice()))
+                    c.update(|b| b.memory_map_tag(MemoryMapTag::new(v.as_slice())))
             },
         }
     }
@@ -324,11 +325,11 @@ impl InfoBuilder {
                     }
                 }
             ),
-            Self::Multiboot2(b) => if let Some(mods) = modules {
+            Self::Multiboot2(c) => if let Some(mods) = modules {
                 for mo in mods {
                     match mo {
                         Module::Multiboot(_) => panic!("wrong Multiboot version"),
-                        Module::Multiboot2(m) => b.add_module_tag(m),
+                        Module::Multiboot2(m) => c.update(|b| b.add_module_tag(m)),
                     }
                 }
             },
@@ -341,9 +342,9 @@ impl InfoBuilder {
     ) {
         match self {
             Self::Multiboot(_) => (), // not supported on Multiboot1
-            Self::Multiboot2(b) => b.rsdp_v1_tag(RsdpV1Tag::new(
+            Self::Multiboot2(c) => c.update(|b| b.rsdp_v1_tag(RsdpV1Tag::new(
                 signature, checksum, oem_id, revision, rsdt_address,
-            )),
+            ))),
         }
     }
 
@@ -354,19 +355,19 @@ impl InfoBuilder {
     ) {
         match self {
             Self::Multiboot(_) => (), // not supported on Multiboot1
-            Self::Multiboot2(b) => b.rsdp_v2_tag(RsdpV2Tag::new(
+            Self::Multiboot2(c) => c.update(|b| b.rsdp_v2_tag(RsdpV2Tag::new(
                 signature, checksum, oem_id, revision, rsdt_address, length,
                 xsdt_address, ext_checksum,
-            )),
+            ))),
         }
     }
 
     pub fn add_smbios_tag(&mut self, major: u8, minor: u8, tables: &[u8]) {
         match self {
             Self::Multiboot(_) => (), // not suppported on Multiboot1
-            Self::Multiboot2(b) => b.add_smbios_tag(
+            Self::Multiboot2(c) => c.update(|b| b.add_smbios_tag(
                 SmbiosTag::new(major, minor, tables)
-            ),
+            )),
         }
     }
 
@@ -378,11 +379,11 @@ impl InfoBuilder {
                     Symbols::Multiboot2(_) => panic!("wrong Multiboot version"),
                 })))
             },
-            Self::Multiboot2(b) => if let Some(syms) = symbols {
+            Self::Multiboot2(c) => if let Some(syms) = symbols {
                 match syms {
                     Symbols::Multiboot(_) => panic!("wrong Multiboot version"),
                     Symbols::Multiboot2(sy) => if let Some(s) = sy {
-                        b.elf_sections_tag(s)
+                        c.update(|b| b.elf_sections_tag(s))
                     }
                 }
             },
@@ -392,8 +393,8 @@ impl InfoBuilder {
     pub fn set_system_table_ia32(&mut self, systab: Option<u32>) {
         match self {
             Self::Multiboot(_) => (), // not suppported on Multiboot1
-            Self::Multiboot2(b) => if let Some(st) = systab {
-                b.efisdt32_tag(EFISdt32Tag::new(st))
+            Self::Multiboot2(c) => if let Some(st) = systab {
+                c.update(|b| b.efisdt32_tag(EFISdt32Tag::new(st)))
             },
         }
     }
@@ -401,8 +402,8 @@ impl InfoBuilder {
     pub fn set_system_table_x64(&mut self, systab: Option<u64>) {
         match self {
             Self::Multiboot(_) => (), // not suppported on Multiboot1
-            Self::Multiboot2(b) => if let Some(st) = systab {
-                b.efisdt64_tag(EFISdt64Tag::new(st))
+            Self::Multiboot2(c) => if let Some(st) = systab {
+                c.update(|b| b.efisdt64_tag(EFISdt64Tag::new(st)))
             },
         }
     }
@@ -551,12 +552,13 @@ impl MemoryEntry {
                 MultibootMemoryType::NVS => MemoryType::ReservedHibernate,
                 MultibootMemoryType::Defect => MemoryType::Defective,
             },
-            Self::Multiboot2(a) => match a.typ() {
+            Self::Multiboot2(a) => match a.typ().into() {
                 MemoryAreaType::Available => MemoryType::Available,
                 MemoryAreaType::Reserved => MemoryType::Reserved,
                 MemoryAreaType::AcpiAvailable => MemoryType::AcpiAvailable,
                 MemoryAreaType::ReservedHibernate => MemoryType::ReservedHibernate,
                 MemoryAreaType::Defective => MemoryType::Defective,
+                MemoryAreaType::Custom(_) => MemoryType::Reserved, // just to be sure
             },
         }
     }
@@ -655,4 +657,24 @@ impl ColorInfo {
 pub enum FramebufferInfo {
     Multiboot(FramebufferTable),
     Multiboot2(BoxedDst<FramebufferTag>),
+}
+
+
+pub struct UpdateCell<T> {
+    value: Cell<Option<T>>
+}
+
+impl<T> UpdateCell<T> {
+    fn new(val: T) -> Self {
+        Self { value: Cell::new(Some(val)) }
+    }
+    
+    fn update<F: FnOnce(T) -> T>(&mut self, func: F) {
+        let val = self.value.take().unwrap();
+        self.value.set(Some(func(val)))
+    }
+
+    fn into_inner(self) -> T {
+        self.value.take().unwrap()
+    }
 }
