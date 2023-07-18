@@ -16,4 +16,4 @@ repository = "https://github.com/YtvwlD/multiboot12"
 multiboot = "0.8"
 multiboot2 = { git = "https://github.com/YtvwlD/multiboot2", tag = "towboot-0.5.0" }
 multiboot2-header = { git = "https://github.com/YtvwlD/multiboot2", tag = "towboot-0.5.0" }
-ouroboros = "0.15.6"
+ouroboros = "0.17.1"
