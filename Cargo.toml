@@ -15,5 +15,5 @@ repository = "https://github.com/YtvwlD/multiboot12"
 [dependencies]
 multiboot = "0.8"
 multiboot2 = { git = "https://github.com/YtvwlD/multiboot2", branch = "memory-map-mut" }
-multiboot2-header = { git = "https://github.com/YtvwlD/multiboot2", branch = "memory-map-mut" }
+multiboot2-header = "0.3"
 ouroboros = "0.17.1"
