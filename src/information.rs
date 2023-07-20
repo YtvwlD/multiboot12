@@ -80,9 +80,9 @@ impl InfoBuilder {
                         let (_head, body, _tail) = unsafe {
                             info_bytes.align_to_mut::<MultibootInfo>()
                         };
-                        let mut info = &mut body[0];
+                        let info = &mut body[0];
                         let mut multiboot = Multiboot::from_ref(
-                            &mut info, &mut heads.allocator,
+                            info, &mut heads.allocator,
                         );
                         multiboot.set_memory_bounds(Some((lower, upper)));
                         MultibootInfoBuilder::copy_memory_regions(
@@ -99,14 +99,14 @@ impl InfoBuilder {
                             Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
                         }.unwrap();
                         let mem_map_tag = info.memory_map_tag_mut().unwrap();
-                        entries.into_iter().zip(
+                        entries.iter().zip(
                             mem_map_tag.all_memory_areas_mut()
                         ).for_each(
                             |(source, destination)| match source {
                                 MemoryEntry::Multiboot(_)
                                     => panic!("wrong Multiboot version"),
                                 MemoryEntry::Multiboot2(src)
-                                    => *destination = src.clone(),
+                                    => *destination = *src,
                             }
                         );
                         let mut info = unsafe {
@@ -119,9 +119,9 @@ impl InfoBuilder {
                         }.unwrap();
                         if let Some(mmap) = efi_mmap {
                             let efi_mmap_tag = info.efi_memory_map_tag_mut().unwrap();
-                            mmap.into_iter().zip(
+                            mmap.iter().zip(
                                 efi_mmap_tag.memory_areas_mut()
-                            ).for_each(|(src, dest)| *dest = src.clone() );
+                            ).for_each(|(src, dest)| *dest = *src );
                         }
                     }),
                 )
@@ -303,7 +303,7 @@ impl InfoBuilder {
             Self::Multiboot2(c) => if let Some(regs) = regions {
                     let v: Vec<_> = regs.iter().map(|me| match me {
                         MemoryEntry::Multiboot(_) => panic!("wrong Multiboot version"),
-                        MemoryEntry::Multiboot2(ma) => ma.clone(),
+                        MemoryEntry::Multiboot2(ma) => *ma,
                     }).collect();
                     c.update(|b| b.memory_map_tag(MemoryMapTag::new(v.as_slice())))
             },
@@ -443,7 +443,7 @@ impl MultibootInfoBuilder {
     /// Write the entries into the vec.
     fn copy_memory_regions(memory_map_vec: &mut Vec<MultibootMemoryEntry>, regions: &[MemoryEntry]) {
         memory_map_vec.truncate(regions.len());
-        regions.into_iter().zip(memory_map_vec.iter_mut()).for_each(
+        regions.iter().zip(memory_map_vec.iter_mut()).for_each(
             |(source, destination)| match source {
                 MemoryEntry::Multiboot(src) => *destination = *src,
                 MemoryEntry::Multiboot2(_) => panic!("wrong Multiboot version"),
