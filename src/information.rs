@@ -166,10 +166,10 @@ impl InfoBuilder {
     pub fn new_memory_entry(&self, base_addr: u64, length: u64, ty: MemoryType, ) -> MemoryEntry {
         match self {
             Self::Multiboot(_) => MemoryEntry::Multiboot(
-                MultibootMemoryEntry::new(base_addr, length, ty.to_multiboot())
+                MultibootMemoryEntry::new(base_addr, length, MultibootMemoryType::from(ty))
             ),
             Self::Multiboot2(_) => MemoryEntry::Multiboot2(
-                MemoryArea::new(base_addr, length, ty.to_multiboot2())
+                MemoryArea::new(base_addr, length, MemoryAreaType::from(ty))
             ),
         }
     }
@@ -520,10 +520,10 @@ impl MemoryEntry {
     pub fn with(&self, base_addr: u64, length: u64, ty: MemoryType) -> Self {
         match self {
             Self::Multiboot(_) => MemoryEntry::Multiboot(
-                MultibootMemoryEntry::new(base_addr, length, ty.to_multiboot())
+                MultibootMemoryEntry::new(base_addr, length, MultibootMemoryType::from(ty))
             ),
             Self::Multiboot2(_) => MemoryEntry::Multiboot2(
-                MemoryArea::new(base_addr, length, ty.to_multiboot2())
+                MemoryArea::new(base_addr, length, MemoryAreaType::from(ty))
             ),
         }
     }
@@ -572,10 +572,9 @@ pub enum MemoryType {
     Defective,
 }
 
-impl MemoryType {
-    // TODO: this could be an into
-    fn to_multiboot(&self) -> MultibootMemoryType {
-        match self {
+impl From<MemoryType> for MultibootMemoryType {
+    fn from(info: MemoryType) -> Self {
+        match info {
             MemoryType::Available => MultibootMemoryType::Available,
             MemoryType::Reserved => MultibootMemoryType::Reserved,
             MemoryType::AcpiAvailable => MultibootMemoryType::ACPI,
@@ -583,9 +582,11 @@ impl MemoryType {
             MemoryType::Defective => MultibootMemoryType::Defect,
         }
     }
+}
 
-    fn to_multiboot2(&self) -> MemoryAreaType {
-        match self {
+impl From<MemoryType> for MemoryAreaType {
+    fn from(info: MemoryType) -> MemoryAreaType {
+        match info {
             MemoryType::Available => MemoryAreaType::Available,
             MemoryType::Reserved => MemoryAreaType::Reserved,
             MemoryType::AcpiAvailable => MemoryAreaType::AcpiAvailable,
