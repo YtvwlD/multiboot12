@@ -45,6 +45,8 @@ pub use multiboot2::EFIMemoryDesc as EfiMemoryDescriptor;
 use multiboot2::builder::{BoxedDst, InformationBuilder as Multiboot2InformationBuilder};
 use ouroboros::self_referencing;
 
+pub type MemoryUpdateFunction = Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry], Option<&[EfiMemoryDescriptor]>)>;
+
 pub enum InfoBuilder {
     Multiboot(MultibootInfoBuilder),
     Multiboot2(UpdateCell<Multiboot2InformationBuilder>),
@@ -64,10 +66,7 @@ impl InfoBuilder {
 
     /// Note: This allocates.
     /// Also, since the return value contains a Box, dropping it deallocates.
-    pub fn build(self) -> (
-        Vec<u8>, u32,
-        Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry], Option<&[EfiMemoryDescriptor]>)>,
-    ) {
+    pub fn build(self) -> (Vec<u8>, u32, MemoryUpdateFunction) {
         match self {
             Self::Multiboot(bu) => {
                 let mut heads = bu.into_heads();
