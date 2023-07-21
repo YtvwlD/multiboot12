@@ -17,3 +17,4 @@ multiboot = "0.8"
 multiboot2 = { git = "https://github.com/YtvwlD/multiboot2", branch = "memory-map-mut" }
 multiboot2-header = "0.3"
 ouroboros = "0.17.1"
+update_cell = "0.1"

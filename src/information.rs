@@ -1,10 +1,10 @@
 use core::alloc::Layout;
-use core::cell::Cell;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::slice;
 use alloc::{collections::BTreeMap, alloc::dealloc};
 use alloc::alloc::alloc;
+use update_cell::UpdateCell;
 
 use multiboot::information::{
     ColorInfoRgb,
@@ -657,24 +657,4 @@ impl ColorInfo {
 pub enum FramebufferInfo {
     Multiboot(FramebufferTable),
     Multiboot2(BoxedDst<FramebufferTag>),
-}
-
-
-pub struct UpdateCell<T> {
-    value: Cell<Option<T>>
-}
-
-impl<T> UpdateCell<T> {
-    fn new(val: T) -> Self {
-        Self { value: Cell::new(Some(val)) }
-    }
-    
-    fn update<F: FnOnce(T) -> T>(&mut self, func: F) {
-        let val = self.value.take().unwrap();
-        self.value.set(Some(func(val)))
-    }
-
-    fn into_inner(self) -> T {
-        self.value.take().unwrap()
-    }
 }
