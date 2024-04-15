@@ -364,7 +364,7 @@ impl InfoBuilder {
     pub fn add_smbios_tag(&mut self, major: u8, minor: u8, tables: &[u8]) {
         match self {
             Self::Multiboot(_) => (), // not suppported on Multiboot1
-            Self::Multiboot2(c) => c.update(|b| b.add_smbios_tag(
+            Self::Multiboot2(c) => c.update(|b| b.smbios_tag(
                 SmbiosTag::new(major, minor, tables)
             )),
         }
