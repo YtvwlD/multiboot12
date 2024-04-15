@@ -28,9 +28,7 @@ impl Header {
     pub fn from_slice(buffer: &[u8]) -> Option<Self> {
         match Multiboot2HeaderWrap::from_slice(buffer) {
             Some(w) => Some(Header::Multiboot2(w)),
-            None => MultibootHeader::from_slice(buffer).map(
-                |h| Header::Multiboot(h)
-            ),
+            None => MultibootHeader::from_slice(buffer).map(Header::Multiboot),
         }
     }
 
@@ -43,16 +41,14 @@ impl Header {
 
     pub fn get_preferred_video_mode(&self) -> Option<VideoMode> {
         match self {
-            Self::Multiboot(h) => h.get_preferred_video_mode().map(|vm| VideoMode::Multiboot(vm)),
+            Self::Multiboot(h) => h.get_preferred_video_mode().map(VideoMode::Multiboot),
             Self::Multiboot2(h) => {
                 if let Some(fb) = h.borrow_header().framebuffer_tag() {
                     Some(VideoMode::Multiboot2(Multiboot2VideoMode::LinearGraphics(fb)))
                 } else {
-                    if let Some(ct) = h.borrow_header().console_flags_tag() {
-                        Some(VideoMode::Multiboot2(Multiboot2VideoMode::TextMode(ct)))
-                    } else {
-                        None
-                    }
+                    h.borrow_header().console_flags_tag().map(
+                        |ct| VideoMode::Multiboot2(Multiboot2VideoMode::TextMode(ct))
+                    )
                 }
             }
         }
@@ -60,9 +56,7 @@ impl Header {
 
     pub fn get_load_addresses(&self) -> Option<Addresses> {
         match self {
-            Self::Multiboot(h) => h.get_addresses().map(
-                |a| Addresses::Multiboot(a)
-            ),
+            Self::Multiboot(h) => h.get_addresses().map(Addresses::Multiboot),
             Self::Multiboot2(h) => {
                 h.borrow_header()
                     .address_tag()
@@ -224,10 +218,9 @@ pub enum VideoMode<'a> {
 impl VideoMode<'_> {
     pub fn is_graphics(&self) -> bool {
         match self {
-            Self::Multiboot(vm) => match vm.mode_type() {
-                Some(VideoModeType::LinearGraphics) => true,
-                _ => false,
-            },
+            Self::Multiboot(vm) => matches!(
+                vm.mode_type(), Some(VideoModeType::LinearGraphics),
+            ),
             Self::Multiboot2(Multiboot2VideoMode::LinearGraphics(_)) => true,
             _ => false,
         }
