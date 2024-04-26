@@ -14,7 +14,7 @@ repository = "https://github.com/YtvwlD/multiboot12"
 
 [dependencies]
 multiboot = "0.8"
-multiboot2 = { git = "https://github.com/YtvwlD/multiboot2", tag = "towboot-0.8.0" }
+multiboot2 = { git = "https://github.com/YtvwlD/multiboot2", tag = "towboot-0.8.1" }
 multiboot2-header = "0.3"
 ouroboros = "0.18"
 update_cell = "0.1"
