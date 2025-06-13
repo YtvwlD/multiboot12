@@ -100,7 +100,7 @@ impl InfoBuilder {
                         }.unwrap();
                         let mem_map_tag = info.memory_map_tag_mut().unwrap();
                         entries.iter().zip(
-                            mem_map_tag.all_memory_areas_mut()
+                            mem_map_tag.memory_areas_mut()
                         ).for_each(
                             |(source, destination)| match source {
                                 MemoryEntry::Multiboot(_)
@@ -199,7 +199,7 @@ impl InfoBuilder {
                 // allocate empty memory entries
                 let mut v = Vec::new();
                 v.resize(count, EfiMemoryDescriptor::default());
-                c.update(|b| b.efi_memory_map_tag(EFIMemoryMapTag::new(v.as_slice())))
+                c.update(|b| b.efi_memory_map_tag(EFIMemoryMapTag::new_from_descs(v.as_slice())))
             },
         }
         let mut v = Vec::new();
