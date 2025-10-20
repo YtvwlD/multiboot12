@@ -27,11 +27,12 @@ pub enum Header {
 impl Header {
     pub fn from_slice(buffer: &[u8]) -> Option<Self> {
         match Multiboot2HeaderWrap::from_slice(buffer) {
-            Some(w) => Some(Header::Multiboot2(w)),
-            None => MultibootHeader::from_slice(buffer).map(Header::Multiboot),
+            Some(w) => Some(Self::Multiboot2(w)),
+            None => MultibootHeader::from_slice(buffer).map(Self::Multiboot),
         }
     }
 
+    #[must_use]
     pub fn header_start(&self) -> u32 {
         match self {
             Self::Multiboot(h) => h.header_start,
@@ -39,7 +40,7 @@ impl Header {
         }
     }
 
-    pub fn get_preferred_video_mode(&self) -> Option<VideoMode> {
+    pub fn get_preferred_video_mode(&self) -> Option<VideoMode<'_>> {
         match self {
             Self::Multiboot(h) => h.get_preferred_video_mode().map(VideoMode::Multiboot),
             Self::Multiboot2(h) => {
@@ -65,6 +66,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn get_efi32_entry_address(&self) -> Option<u32> {
         match self {
             Self::Multiboot(_) => None, // Multiboot1 doesn't support this
@@ -73,6 +75,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn get_efi64_entry_address(&self) -> Option<u32> {
         match self {
             Self::Multiboot(_) => None, // Multiboot1 doesn't support this
@@ -81,6 +84,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn get_entry_address(&self) -> Option<u32> {
         match self {
             Self::Multiboot(h) => h.get_addresses().map(
@@ -94,6 +98,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn info_builder(&self) -> InfoBuilder {
         match self {
             Self::Multiboot(_) => InfoBuilder::new_multiboot(),
@@ -101,6 +106,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn new_elf_symbols(
         &self, num: u32, size: u32, addr: usize, shndx: u32
     ) -> Symbols {
@@ -114,6 +120,7 @@ impl Header {
         }
     }
 
+    #[must_use]
     pub fn should_exit_boot_services(&self) -> bool {
         match self {
             Self::Multiboot(_) => true, // Multiboot1 doesn't know about this
@@ -146,7 +153,7 @@ impl Multiboot2HeaderWrap {
                 // yes, that's bad, but making it better would mean modifying
                 // the multiboot2 crate
                 Multiboot2Header::load(
-                    header_pin.as_ref().as_ptr() as *const Multiboot2BasicHeader
+                    header_pin.as_ref().as_ptr().cast::<Multiboot2BasicHeader>()
                 ).unwrap() // `find_header` should have failed already.
             }
         }.build())
@@ -160,6 +167,7 @@ pub enum Addresses {
 }
 
 impl Addresses {
+    #[must_use]
     pub fn compute_load_offset(&self, header_start: u32) -> u32 {
         match self {
             Self::Multiboot(a) => a.compute_load_offset(header_start),
@@ -169,7 +177,8 @@ impl Addresses {
         }
     }
 
-    pub fn compute_kernel_length(&self, whole_length: u32) -> u32 {
+    #[must_use]
+    pub const fn compute_kernel_length(&self, whole_length: u32) -> u32 {
         if self.bss_end_addr() == 0 {
             if self.load_end_addr() == 0 {
                 self.header_addr() + whole_length - self.load_addr()
@@ -181,28 +190,30 @@ impl Addresses {
         }
     }
 
-    fn header_addr(&self) -> u32 {
+    const fn header_addr(&self) -> u32 {
         match self {
             Self::Multiboot(a) => a.header_address,
             Self::Multiboot2(a) => a.header_addr(),
         }
     }
 
-    fn bss_end_addr(&self) -> u32 {
+    const fn bss_end_addr(&self) -> u32 {
         match self {
             Self::Multiboot(a) => a.bss_end_address,
             Self::Multiboot2(a) => a.bss_end_addr(),
         }
     }
 
-    pub fn load_addr(&self) -> u32 {
+    #[must_use]
+    pub const fn load_addr(&self) -> u32 {
         match self {
             Self::Multiboot(a) => a.load_address,
             Self::Multiboot2(a) => a.load_addr(),
         }
     }
 
-    pub fn load_end_addr(&self) -> u32 {
+    #[must_use]
+    pub const fn load_end_addr(&self) -> u32 {
         match self {
             Self::Multiboot(a) => a.load_end_address,
             Self::Multiboot2(a) => a.load_end_addr(),
@@ -216,6 +227,7 @@ pub enum VideoMode<'a> {
 }
 
 impl VideoMode<'_> {
+    #[must_use]
     pub fn is_graphics(&self) -> bool {
         match self {
             Self::Multiboot(vm) => matches!(
@@ -226,6 +238,7 @@ impl VideoMode<'_> {
         }
     }
 
+    #[must_use]
     pub fn depth(&self) -> Option<u32> {
         match self {
             Self::Multiboot(vm) => vm.depth(),
@@ -238,7 +251,8 @@ impl VideoMode<'_> {
 
     /// Return the width of the framebuffer.
     /// Text consoles in multiboot2 have no size.
-    pub fn width(&self) -> Option<u32> {
+    #[must_use]
+    pub const fn width(&self) -> Option<u32> {
         match self {
             Self::Multiboot(vm) => Some(vm.width),
             Self::Multiboot2(Multiboot2VideoMode::LinearGraphics(&ft)) => {
@@ -250,7 +264,8 @@ impl VideoMode<'_> {
 
     /// Return the height of the framebuffer.
     /// Text consoles in multiboot2 have no size.
-    pub fn height(&self) -> Option<u32> {
+    #[must_use]
+    pub const fn height(&self) -> Option<u32> {
         match self {
             Self::Multiboot(vm) => Some(vm.height),
             Self::Multiboot2(Multiboot2VideoMode::LinearGraphics(&ft)) => {

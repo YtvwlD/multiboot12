@@ -62,7 +62,7 @@ impl InfoBuilder {
                 let mut heads = bu.into_heads();
                 (
                     unsafe { core::slice::from_raw_parts(
-                        &heads.info as *const MultibootInfo as *const u8,
+                        (&heads.info as *const MultibootInfo).cast::<u8>(),
                         core::mem::size_of::<MultibootInfo>(),
                     ) }.to_vec(),
                     MULTIBOOT_EAX_SIGNATURE,
@@ -103,12 +103,15 @@ impl InfoBuilder {
                             }
                         );
                         let mut info = unsafe {
-                            Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                            Multiboot2BootInformation::load_mut(
+                                info_bytes.as_mut_ptr().cast::<Multiboot2BootInformationHeader>())
                         }.unwrap();
                         let mem_info_tag = info.basic_memory_info_tag_mut().unwrap();
                         *mem_info_tag = BasicMemoryInfoTag::new(lower, upper);
                         let mut info = unsafe {
-                            Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                            Multiboot2BootInformation::load_mut(
+                                info_bytes.as_mut_ptr().cast::<Multiboot2BootInformationHeader>()
+                            )
                         }.unwrap();
                         if let Some(mmap) = efi_mmap {
                             let efi_mmap_tag = info.efi_memory_map_tag_mut().unwrap();
@@ -122,7 +125,7 @@ impl InfoBuilder {
         }
     }
 
-    pub fn new_color_info_rgb(&self,
+    pub const fn new_color_info_rgb(&self,
         red_field_position: u8,
         red_mask_size: u8,
         green_field_position: u8,
@@ -464,8 +467,8 @@ pub(super) struct MultibootAllocator {
 
 impl MultibootAllocator {
     /// Initialize the allocator.
-    pub(super) fn new() -> Self {
-        MultibootAllocator { allocations: BTreeMap::new() }
+    pub(super) const fn new() -> Self {
+        Self { allocations: BTreeMap::new() }
     }
 }
 
@@ -522,17 +525,19 @@ pub enum MemoryEntry {
 }
 
 impl MemoryEntry {
+    #[must_use]
     pub fn with(&self, base_addr: u64, length: u64, ty: MemoryType) -> Self {
         match self {
-            Self::Multiboot(_) => MemoryEntry::Multiboot(
+            Self::Multiboot(_) => Self::Multiboot(
                 MultibootMemoryEntry::new(base_addr, length, MultibootMemoryType::from(ty))
             ),
-            Self::Multiboot2(_) => MemoryEntry::Multiboot2(
+            Self::Multiboot2(_) => Self::Multiboot2(
                 MemoryArea::new(base_addr, length, MemoryAreaType::from(ty))
             ),
         }
     }
 
+    #[must_use]
     pub fn base_address(&self) -> u64 {
         match self {
             Self::Multiboot(e) => e.base_address(),
@@ -540,6 +545,7 @@ impl MemoryEntry {
         }
     }
 
+    #[must_use]
     pub fn length(&self) -> u64 {
         match self {
             Self::Multiboot(e) => e.length(),
@@ -547,6 +553,7 @@ impl MemoryEntry {
         }
     }
 
+    #[must_use]
     pub fn memory_type(&self) -> MemoryType {
         match self {
             Self::Multiboot(e) => match e.memory_type() {
@@ -580,23 +587,23 @@ pub enum MemoryType {
 impl From<MemoryType> for MultibootMemoryType {
     fn from(info: MemoryType) -> Self {
         match info {
-            MemoryType::Available => MultibootMemoryType::Available,
-            MemoryType::Reserved => MultibootMemoryType::Reserved,
-            MemoryType::AcpiAvailable => MultibootMemoryType::ACPI,
-            MemoryType::ReservedHibernate => MultibootMemoryType::NVS,
-            MemoryType::Defective => MultibootMemoryType::Defect,
+            MemoryType::Available => Self::Available,
+            MemoryType::Reserved => Self::Reserved,
+            MemoryType::AcpiAvailable => Self::ACPI,
+            MemoryType::ReservedHibernate => Self::NVS,
+            MemoryType::Defective => Self::Defect,
         }
     }
 }
 
 impl From<MemoryType> for MemoryAreaType {
-    fn from(info: MemoryType) -> MemoryAreaType {
+    fn from(info: MemoryType) -> Self {
         match info {
-            MemoryType::Available => MemoryAreaType::Available,
-            MemoryType::Reserved => MemoryAreaType::Reserved,
-            MemoryType::AcpiAvailable => MemoryAreaType::AcpiAvailable,
-            MemoryType::ReservedHibernate => MemoryAreaType::ReservedHibernate,
-            MemoryType::Defective => MemoryAreaType::Defective,
+            MemoryType::Available => Self::Available,
+            MemoryType::Reserved => Self::Reserved,
+            MemoryType::AcpiAvailable => Self::AcpiAvailable,
+            MemoryType::ReservedHibernate => Self::ReservedHibernate,
+            MemoryType::Defective => Self::Defective,
         }
     }
 }
@@ -640,6 +647,7 @@ pub enum ColorInfo {
 }
 
 impl ColorInfo {
+    #[must_use]
     pub fn to_framebuffer_info(self,
         addr: u64,
         pitch: u32,
