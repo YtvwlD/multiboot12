@@ -43,14 +43,14 @@ pub enum InfoBuilder {
 }
 
 impl InfoBuilder {
-    pub(crate) fn new_multiboot() -> Self {
+    pub fn new_multiboot() -> Self {
         Self::Multiboot(MultibootInfoBuilder::new(
             MultibootInfo::default(), MultibootAllocator::new(),
             Vec::new(), |i, a| Multiboot::from_ref(i, a),
         ))
     }
 
-    pub(crate) fn new_multiboot2() -> Self {
+    pub fn new_multiboot2() -> Self {
         Self::Multiboot2(UpdateCell::new(Multiboot2InformationBuilder::new()))
     }
 
