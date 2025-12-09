@@ -22,9 +22,7 @@ use multiboot::information::{
     SIGNATURE_EAX as MULTIBOOT_EAX_SIGNATURE,
 };
 use multiboot2::{
-    BasicMemoryInfoTag, BootInformation as Multiboot2BootInformation,
-    BootInformationHeader as Multiboot2BootInformationHeader,
-    BootLoaderNameTag, CommandLineTag, EFIBootServicesNotExitedTag,
+    BasicMemoryInfoTag, BootInformation as Multiboot2BootInformation,    BootLoaderNameTag, CommandLineTag, EFIBootServicesNotExitedTag,
     EFIImageHandle32Tag, EFIImageHandle64Tag, EFIMemoryMapTag, EFISdt32Tag,
     EFISdt64Tag, ElfSectionsTag, FramebufferField, FramebufferTag,
     FramebufferType, ImageLoadPhysAddrTag, MAGIC as MULTIBOOT2_EAX_SIGNATURE,
@@ -88,36 +86,35 @@ impl InfoBuilder {
                     unsafe { Vec::from_raw_parts(Box::into_raw(header).cast(), len, len) },
                     MULTIBOOT2_EAX_SIGNATURE,
                     Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], efi_mmap: Option<&[EfiMemoryDescriptor]>| {
-                        let mut info = unsafe {
-                            Multiboot2BootInformation::load_mut(info_bytes.as_mut_ptr() as *mut Multiboot2BootInformationHeader)
+                        let info = unsafe {
+                            Multiboot2BootInformation::load(info_bytes.as_ptr().cast())
                         }.unwrap();
-                        let mem_map_tag = info.memory_map_tag_mut().unwrap();
+                        let mem_map_tag = info.memory_map_tag().unwrap();
                         entries.iter().zip(
-                            mem_map_tag.memory_areas_mut()
+                            mem_map_tag.memory_areas()
                         ).for_each(
                             |(source, destination)| match source {
                                 MemoryEntry::Multiboot(_)
                                     => panic!("wrong Multiboot version"),
-                                MemoryEntry::Multiboot2(src)
-                                    => *destination = *src,
+                                MemoryEntry::Multiboot2(src) => {
+                                    let destination = (destination as *const MemoryArea).cast_mut();
+                                    unsafe { destination.write(*src) };
+                                },
                             }
                         );
-                        let mut info = unsafe {
-                            Multiboot2BootInformation::load_mut(
-                                info_bytes.as_mut_ptr().cast::<Multiboot2BootInformationHeader>())
-                        }.unwrap();
-                        let mem_info_tag = info.basic_memory_info_tag_mut().unwrap();
-                        *mem_info_tag = BasicMemoryInfoTag::new(lower, upper);
-                        let mut info = unsafe {
-                            Multiboot2BootInformation::load_mut(
-                                info_bytes.as_mut_ptr().cast::<Multiboot2BootInformationHeader>()
-                            )
-                        }.unwrap();
+                        let mem_info_tag = info.basic_memory_info_tag().unwrap();
+                        let mem_info_tag = (mem_info_tag as *const BasicMemoryInfoTag).cast_mut();
+                        unsafe { mem_info_tag.write(BasicMemoryInfoTag::new(lower, upper)) };
                         if let Some(mmap) = efi_mmap {
-                            let efi_mmap_tag = info.efi_memory_map_tag_mut().unwrap();
-                            mmap.iter().zip(
-                                efi_mmap_tag.memory_areas_mut()
-                            ).for_each(|(src, dest)| *dest = *src );
+                            // we can't get the EFIMemoryMapTag if there is a BootServicesNotExitedTag
+                            if let Some(efi_mmap_tag) = info.efi_memory_map_tag() {
+                                mmap.iter().zip(
+                                    efi_mmap_tag.memory_areas()
+                                ).for_each(|(src, dest)| {
+                                    let dest = (dest as *const EfiMemoryDescriptor).cast_mut();
+                                    unsafe { dest.write(*src) };
+                                });
+                            }
                         }
                     }),
                 )
