@@ -1,3 +1,4 @@
+use core::alloc::Allocator;
 use core::pin::Pin;
 use alloc::boxed::Box;
 use ouroboros::self_referencing;
@@ -99,9 +100,9 @@ impl Header {
     }
 
     #[must_use]
-    pub fn info_builder(&self) -> InfoBuilder {
+    pub fn info_builder<A: Allocator + Clone>(&self, allocator: A) -> InfoBuilder<A> {
         match self {
-            Self::Multiboot(_) => InfoBuilder::new_multiboot(),
+            Self::Multiboot(_) => InfoBuilder::new_multiboot(allocator),
             Self::Multiboot2(_) => InfoBuilder::new_multiboot2(),
         }
     }

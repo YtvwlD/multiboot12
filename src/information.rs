@@ -1,9 +1,8 @@
-use core::alloc::Layout;
+use core::alloc::{Allocator, Layout};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use alloc::slice;
 use alloc::{collections::BTreeMap, alloc::dealloc};
-use alloc::alloc::alloc;
 use update_cell::UpdateCell;
 
 use multiboot::information::{
@@ -35,16 +34,16 @@ use ouroboros::self_referencing;
 
 pub type MemoryUpdateFunction = Box<dyn FnMut(&mut [u8], u32, u32, &[MemoryEntry], Option<&[EfiMemoryDescriptor]>)>;
 
-pub enum InfoBuilder {
-    Multiboot(MultibootInfoBuilder),
+pub enum InfoBuilder<A: Allocator + 'static> {
+    Multiboot(MultibootInfoBuilder<A>),
     Multiboot2(UpdateCell<Multiboot2InformationBuilder>),
 }
 
-impl InfoBuilder {
-    pub fn new_multiboot() -> Self {
+impl<A: Allocator + Clone + 'static> InfoBuilder<A> {
+    pub fn new_multiboot(allocator: A) -> Self {
         Self::Multiboot(MultibootInfoBuilder::new(
-            MultibootInfo::default(), MultibootAllocator::new(),
-            Vec::new(), |i, a| Multiboot::from_ref(i, a),
+            MultibootInfo::default(), MultibootAllocator::new(allocator.clone()),
+            Vec::new_in(allocator), |i, a| Multiboot::from_ref(i, a),
         ))
     }
 
@@ -54,7 +53,7 @@ impl InfoBuilder {
 
     /// Note: This allocates.
     /// Also, since the return value contains a Box, dropping it deallocates.
-    pub fn build(self) -> (Vec<u8>, u32, MemoryUpdateFunction) {
+    pub fn build(self, allocator: A) -> (Vec<u8, A>, u32, MemoryUpdateFunction) {
         match self {
             Self::Multiboot(bu) => {
                 let mut heads = bu.into_heads();
@@ -62,7 +61,7 @@ impl InfoBuilder {
                     unsafe { core::slice::from_raw_parts(
                         (&heads.info as *const MultibootInfo).cast::<u8>(),
                         core::mem::size_of::<MultibootInfo>(),
-                    ) }.to_vec(),
+                    ) }.to_vec_in(allocator),
                     MULTIBOOT_EAX_SIGNATURE,
                     Box::new(move |info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], _efi_mmap: Option<&[EfiMemoryDescriptor]>| {
                         let (_head, body, _tail) = unsafe {
@@ -73,7 +72,7 @@ impl InfoBuilder {
                             info, &mut heads.allocator,
                         );
                         multiboot.set_memory_bounds(Some((lower, upper)));
-                        MultibootInfoBuilder::copy_memory_regions(
+                        MultibootInfoBuilder::<A>::copy_memory_regions(
                             &mut heads.memory_map_vec, entries,
                         );
                     }),
@@ -83,7 +82,11 @@ impl InfoBuilder {
                 let header = c.into_inner().build();
                 let len: usize = header.header().total_size().try_into().unwrap();
                 (
-                    unsafe { Vec::from_raw_parts(Box::into_raw(header).cast(), len, len) },
+                    {
+                        let v = unsafe { Vec::from_raw_parts(Box::into_raw(header).cast(), len, len) };
+                        // this copies the Vec to the given allocator
+                        v.to_vec_in(allocator)
+                    },
                     MULTIBOOT2_EAX_SIGNATURE,
                     Box::new(|info_bytes: &mut [u8], lower: u32, upper: u32, entries: &[MemoryEntry], efi_mmap: Option<&[EfiMemoryDescriptor]>| {
                         let info = unsafe {
@@ -414,16 +417,16 @@ impl InfoBuilder {
 }
 
 #[self_referencing]
-pub struct MultibootInfoBuilder {
+pub struct MultibootInfoBuilder<A: Allocator + 'static> {
     info: MultibootInfo,
-    allocator: MultibootAllocator,
-    memory_map_vec: Vec<MultibootMemoryEntry>,
+    allocator: MultibootAllocator<A>,
+    memory_map_vec: Vec<MultibootMemoryEntry, A>,
     #[borrows(mut info, mut allocator)]
     #[not_covariant]
     wrap: Multiboot<'this, 'this>,
 }
 
-impl MultibootInfoBuilder {
+impl<A: Allocator> MultibootInfoBuilder<A> {
     fn allocate_memory_map_vec(&mut self, count: usize) {
         self.with_mut(|f| {
             f.memory_map_vec.resize(count, MultibootMemoryEntry::default());
@@ -446,7 +449,7 @@ impl MultibootInfoBuilder {
     }
 
     /// Write the entries into the vec.
-    fn copy_memory_regions(memory_map_vec: &mut Vec<MultibootMemoryEntry>, regions: &[MemoryEntry]) {
+    fn copy_memory_regions(memory_map_vec: &mut Vec<MultibootMemoryEntry, A>, regions: &[MemoryEntry]) {
         memory_map_vec.truncate(regions.len());
         regions.iter().zip(memory_map_vec.iter_mut()).for_each(
             |(source, destination)| match source {
@@ -458,18 +461,19 @@ impl MultibootInfoBuilder {
 }
 
 /// Proxy Rust's allocator to the multiboot crate.
-pub(super) struct MultibootAllocator {
+pub(super) struct MultibootAllocator<A: Allocator> {
+    allocator: A,
     allocations: BTreeMap<u64, Layout>
 }
 
-impl MultibootAllocator {
+impl<A: Allocator> MultibootAllocator<A> {
     /// Initialize the allocator.
-    pub(super) const fn new() -> Self {
-        Self { allocations: BTreeMap::new() }
+    pub(super) const fn new(allocator: A) -> Self {
+        Self { allocator, allocations: BTreeMap::new() }
     }
 }
 
-impl MemoryManagement for MultibootAllocator {
+impl<A: Allocator> MemoryManagement for MultibootAllocator<A> {
     /// Get a slice to the memory referenced by the pointer.
     unsafe fn paddr_to_slice(
         &self, addr: u64, _length: usize
@@ -485,19 +489,15 @@ impl MemoryManagement for MultibootAllocator {
         &mut self, length: usize
     ) -> Option<(u64, &mut [u8])> {
         let layout = Layout::array::<u8>(length).expect("tried to allocate more than usize");
-        let ptr = alloc(layout);
-        if ptr as usize >= u32::MAX as usize {
+        let Ok(mut ptr) = self.allocator.allocate(layout) else { return None };
+        if ptr.addr().get() >= u32::MAX as usize {
             return None
         }
-        if ptr.is_null() {
-            None
-        } else {
-            self.allocations.insert(ptr as u64, layout);
-            Some((
-                ptr as u64,
-                core::slice::from_raw_parts_mut(ptr, length),
-            ))
-        }
+        self.allocations.insert(ptr.addr().get() as u64, layout);
+        Some((
+            ptr.addr().get() as u64,
+            ptr.as_mut(),
+        ))
     }
     
     /// Free the previously allocated memory.
