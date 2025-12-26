@@ -75,6 +75,7 @@ impl<A: Allocator + Clone + 'static> InfoBuilder<A> {
                         MultibootInfoBuilder::<A>::copy_memory_regions(
                             &mut heads.memory_map_vec, entries,
                         );
+                        multiboot.set_memory_regions(Some((heads.memory_map_vec.as_slice().as_ptr() as PAddr, entries.len())));
                     }),
                 )
             },
